@@ -1,0 +1,17 @@
+__pycache__/
+venv/
+.env
+.DS_Store
+*.pyc
+.idea/
+*.iml
+*.log
+coverage/
+htmlcov/
+.tox/
+.pytest_cache/
+.mypy_cache/
+.pyre/
+.pytype/
+.pyright/
+dist/   
