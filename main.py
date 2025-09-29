@@ -1,8 +1,11 @@
 from flask import Flask, request, jsonify
-from or_module import execute_module, DelayFactors  # Import your main logic
+from flask_cors import CORS  # Import the CORS library
+from or_module import execute_module, DelayFactors
 from datetime import datetime
 
 app = Flask(__name__)
+# Explicitly allow all origins ('*') to access all routes
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 @app.route('/optimize', methods=['POST'])
 def run_optimization():
@@ -21,7 +24,6 @@ def run_optimization():
         return jsonify({"error": "Missing 'trains' data in request body"}), 400
 
     try:
-        # The 'delay_factors' part is optional in the JSON payload
         for tid, info in train_data.items():
             if 'delay_factors' in info and info['delay_factors']:
                 info['delay_factors'] = DelayFactors(**info['delay_factors'])
@@ -34,9 +36,8 @@ def run_optimization():
     except (TypeError, ValueError) as e:
         return jsonify({"error": f"Invalid data format: {e}"}), 400
     except Exception as e:
-        # A general error handler for unexpected issues
         return jsonify({"error": f"An unexpected error occurred: {e}"}), 500
 
 if __name__ == '__main__':
-    # Runs the Flask app on http://127.0.0.1:5000
     app.run(debug=True)
+
