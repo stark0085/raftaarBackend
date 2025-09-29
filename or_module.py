@@ -21,7 +21,7 @@ TRAIN_PRECEDENCE = {
 # 1. CORE CLASSES
 # ==============================================================================
 class DelayFactors:
-    def _init_(self, is_track_functional=True, chain_pull_delay=0, loco_pilot_delay=0, ml_weather_delay=0):
+    def __init__(self, is_track_functional=True, chain_pull_delay=0, loco_pilot_delay=0, ml_weather_delay=0):
         self.chain_pull_delay = chain_pull_delay
         self.loco_pilot_delay = loco_pilot_delay
         self.ml_weather_delay = ml_weather_delay
@@ -29,7 +29,7 @@ class DelayFactors:
         return self.chain_pull_delay + self.loco_pilot_delay + self.ml_weather_delay
 
 class NetworkTimeState:
-    def _init_(self):
+    def __init__(self):
         self.edge_travel_times = {
             ('Entry_1', 'A'): 3, ('Entry_4', 'A'): 2, ('Entry_2', 'B'): 4, ('Entry_5', 'B'): 3,
             ('Entry_3', 'C'): 5, ('Entry_6', 'C'): 3, ('F', 'Entry_10'): 3, ('F', 'Entry_12'): 3,
@@ -42,7 +42,7 @@ class NetworkTimeState:
         self.dwell_times = {'Passenger': 3, 'Special': 2, 'Freight': 8, 'Local': 5}
 
 class TrainJourney:
-    def _init_(self, train_id, entry_node, exit_node, scheduled_entry_time,
+    def __init__(self, train_id, entry_node, exit_node, scheduled_entry_time,
                  train_type, network_state, scheduled_exit_time=None, non_functional_segments=None, delay_factors=None):
         self.train_id = train_id
         self.entry_node = entry_node
@@ -79,7 +79,7 @@ def find_all_possible_paths(graph, start_node, end_node):
 # 3. CORE OR ALGORITHM
 # ==============================================================================
 class PathBasedSolution:
-    def _init_(self, train_journeys):
+    def __init__(self, train_journeys):
         self.train_journeys = {tj.train_id: tj for tj in train_journeys}
         self.decisions = {}
         for tid, journey in self.train_journeys.items():

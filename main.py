@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 from or_module import execute_module
 from dashboard_data_manager import update_and_get_dashboard_state, get_dashboard_data_class
 
-app = Flask(_name_)
+app = Flask(__name__)
 
 # ==============================================================================
 # 1. Main Optimizer Endpoint
@@ -58,6 +58,6 @@ def get_train_type_data():
 def get_audit_data():
     return jsonify(get_dashboard_data_class('auditData'))
 
-if _name_ == '_main_':
+if __name__ == '__main__':
     # This allows you to run the server locally for testing
     app.run(debug=True, port=5000)
