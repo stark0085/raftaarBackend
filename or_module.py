@@ -7,6 +7,13 @@ import sys
 import heapq
 from itertools import islice
 
+TRAIN_PRECEDENCE = {
+    'Special': 4,
+    'Passenger': 3,
+    'Local': 2,
+    'Freight': 1
+}
+
 # ==============================================================================
 # 1. CORE CLASSES
 # ==============================================================================
@@ -199,4 +206,5 @@ def execute_module(train_data, non_functional_segments=None):
         })
     # ** THE CHANGE IS HERE: Return the final_timelines **
     return {'score': round(final_score, 2), 'recommendations': recommendations, 'solution': best_solution, 'conflicts': conflicts, 'timelines': final_timelines}
+
 
