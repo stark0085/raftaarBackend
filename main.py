@@ -1,43 +1,63 @@
 from flask import Flask, request, jsonify
-from flask_cors import CORS  # Import the CORS library
-from or_module import execute_module, DelayFactors
-from datetime import datetime
+from or_module import execute_module
+from dashboard_data_manager import update_and_get_dashboard_state, get_dashboard_data_class
 
 app = Flask(__name__)
-# Explicitly allow all origins ('*') to access all routes
-CORS(app, resources={r"/*": {"origins": "*"}})
 
+# ==============================================================================
+# 1. Main Optimizer Endpoint
+# ==============================================================================
 @app.route('/optimize', methods=['POST'])
-def run_optimization():
+def optimize_schedule():
     """
-    API endpoint to run the train scheduling optimization.
-    Expects a JSON payload with train data.
+    Receives train data, runs the optimization, updates the live dashboard state,
+    and returns the schedule recommendations.
     """
-    if not request.is_json:
-        return jsonify({"error": "Request must be JSON"}), 400
+    train_data = request.get_json()
+    if not train_data or 'trains' not in train_data:
+        return jsonify({"error": "Invalid input"}), 400
 
-    data = request.get_json()
-    train_data = data.get('trains')
-    non_functional = data.get('non_functional_segments', [])
+    non_functional_segments = train_data.get('non_functional_segments', [])
+    
+    # Run the core optimization logic
+    results = execute_module(train_data['trains'], non_functional_segments)
+    
+    # Update the live state in Firestore with the results
+    update_and_get_dashboard_state(results, train_data['trains'])
+    
+    # Return the optimization results to the caller
+    results.pop('solution', None) # The UI doesn't need the complex solution object
+    return jsonify(results)
 
-    if not train_data:
-        return jsonify({"error": "Missing 'trains' data in request body"}), 400
+# ==============================================================================
+# 2. Dashboard GET Endpoints
+# ==============================================================================
+# These endpoints allow the UI to fetch the specific data "classes" it needs.
 
-    try:
-        for tid, info in train_data.items():
-            if 'delay_factors' in info and info['delay_factors']:
-                info['delay_factors'] = DelayFactors(**info['delay_factors'])
-            else:
-                info['delay_factors'] = None
+@app.route('/dashboard/current_delays', methods=['GET'])
+def get_current_delays():
+    return jsonify(get_dashboard_data_class('currentDelays'))
 
-        results = execute_module(train_data, non_functional)
-        return jsonify(results)
+@app.route('/dashboard/train_queue', methods=['GET'])
+def get_train_queue():
+    return jsonify(get_dashboard_data_class('trainQueue'))
 
-    except (TypeError, ValueError) as e:
-        return jsonify({"error": f"Invalid data format: {e}"}), 400
-    except Exception as e:
-        return jsonify({"error": f"An unexpected error occurred: {e}"}), 500
+@app.route('/dashboard/platform_status', methods=['GET'])
+def get_platform_status():
+    return jsonify(get_dashboard_data_class('platformStatus'))
+
+@app.route('/dashboard/predicted_conflicts', methods=['GET'])
+def get_predicted_conflicts():
+    return jsonify(get_dashboard_data_class('predictedConflicts'))
+
+@app.route('/dashboard/train_type_data', methods=['GET'])
+def get_train_type_data():
+    return jsonify(get_dashboard_data_class('trainTypeData'))
+    
+@app.route('/dashboard/audit_data', methods=['GET'])
+def get_audit_data():
+    return jsonify(get_dashboard_data_class('auditData'))
 
 if __name__ == '__main__':
-    app.run(debug=True)
-
+    # This allows you to run the server locally for testing
+    app.run(debug=True, port=5000)
