@@ -7,6 +7,9 @@ import sys
 import heapq
 from itertools import islice
 
+# ==============================================================================
+# 0. GLOBAL CONSTANTS
+# ==============================================================================
 TRAIN_PRECEDENCE = {
     'Special': 4,
     'Passenger': 3,
@@ -39,8 +42,8 @@ class NetworkTimeState:
         self.dwell_times = {'Passenger': 3, 'Special': 2, 'Freight': 8, 'Local': 5}
 
 class TrainJourney:
-    def __init__(self, train_id, entry_node, exit_node, scheduled_entry_time, scheduled_exit_time,
-                 train_type, network_state, non_functional_segments=None, delay_factors=None):
+    def __init__(self, train_id, entry_node, exit_node, scheduled_entry_time,
+                 train_type, network_state, scheduled_exit_time=None, non_functional_segments=None, delay_factors=None):
         self.train_id = train_id
         self.entry_node = entry_node
         self.exit_node = exit_node
@@ -87,12 +90,10 @@ def calculate_objective_cost(solution, network_state):
     individual_delays = {tid: 0 for tid in solution.train_journeys.keys()}
     event_queue, conflicts_detected = [], []
     actual_finish_times = {}
-    actual_timelines = {tid: {} for tid in solution.train_journeys.keys()} # To store detailed timelines
-
+    actual_timelines = {tid: {} for tid in solution.train_journeys.keys()}
     for tid, decision in solution.decisions.items():
         if decision['action'] == 'PROCEED' and decision['path']:
             heapq.heappush(event_queue, (solution.train_journeys[tid].actual_arrival_time, tid, 0))
-
     processed_events = {}
     while event_queue:
         current_time, train_id, path_idx = heapq.heappop(event_queue)
@@ -109,11 +110,7 @@ def calculate_objective_cost(solution, network_state):
         if wait_time > 0.1:
             conflicting_train = track_holder if last_track_exit > last_node_exit else node_holder
             if conflicting_train and (train_id, conflicting_train) not in processed_events:
-                conflicts_detected.append({
-                    'time': entry_time.strftime('%H:%M'), 'trains': [train_id, conflicting_train],
-                    'location': f"Junction {start_node}", 'severity': 'medium',
-                    'resolution': f"HOLD {train_id} for {wait_time:.2f} min"
-                })
+                conflicts_detected.append({'time': entry_time.strftime('%H:%M'), 'trains': [train_id, conflicting_train], 'location': f"Junction {start_node}", 'severity': 'medium', 'resolution': f"HOLD {train_id} for {wait_time:.2f} min"})
                 processed_events[(train_id, conflicting_train)] = True
         individual_delays[train_id] += wait_time
         journey = solution.train_journeys[train_id]
@@ -123,7 +120,7 @@ def calculate_objective_cost(solution, network_state):
         exit_time = entry_time + timedelta(minutes=travel_time)
         track_occupancy[segment] = (exit_time, train_id)
         node_occupancy[end_node] = (exit_time, train_id)
-        actual_timelines[train_id][segment] = (entry_time, exit_time) # Store timeline
+        actual_timelines[train_id][segment] = (entry_time, exit_time)
         heapq.heappush(event_queue, (exit_time, train_id, path_idx + 1))
 
     total_delay, throughput_bonus = 0, 0
@@ -140,7 +137,6 @@ def calculate_objective_cost(solution, network_state):
             held_delay = (latest_clear_time - journey.actual_arrival_time).total_seconds() / 60
             individual_delays[tid] = max(0, held_delay)
             total_delay += individual_delays[tid]
-
     return total_delay - throughput_bonus, individual_delays, conflicts_detected, actual_timelines
 
 def generate_neighbor(solution):
@@ -179,32 +175,66 @@ def simulated_annealing(train_journeys, network_state, iterations=2000, temp=100
 # 4. MAIN EXECUTION & REPORTING
 # ==============================================================================
 def execute_module(train_data, non_functional_segments=None):
+    """
+    Main entry point for the OR module. It now safely handles and sanitizes
+    the input data before running the optimization.
+    """
     network_state = NetworkTimeState()
     train_journeys = []
+
     for tid, info in train_data.items():
-        journey_info = info.copy()
-        journey_info['train_type'] = journey_info.pop('type')
-        entry_time = journey_info['scheduled_entry_time']
-        exit_time = journey_info['scheduled_exit_time']
-        if isinstance(entry_time, str):
-            journey_info['scheduled_entry_time'] = datetime.fromisoformat(entry_time)
-        if isinstance(exit_time, str):
-            journey_info['scheduled_exit_time'] = datetime.fromisoformat(exit_time)
-        train_journeys.append(TrainJourney(train_id=tid, network_state=network_state, non_functional_segments=non_functional_segments, **journey_info))
+        try:
+            # --- Robust Data Sanitization ---
+            journey_info = {}
+            journey_info['train_type'] = info['type']
+            journey_info['entry_node'] = info['entry_node']
+            journey_info['exit_node'] = info['exit_node']
+
+            # Safely convert time strings to datetime objects
+            entry_time = info['scheduled_entry_time']
+            if isinstance(entry_time, str):
+                journey_info['scheduled_entry_time'] = datetime.fromisoformat(entry_time)
+            elif isinstance(entry_time, datetime):
+                journey_info['scheduled_entry_time'] = entry_time
+            else:
+                raise ValueError("scheduled_entry_time must be an ISO format string or datetime object")
+
+            # Handle optional exit time
+            exit_time = info.get('scheduled_exit_time')
+            if isinstance(exit_time, str):
+                journey_info['scheduled_exit_time'] = datetime.fromisoformat(exit_time)
+            elif isinstance(exit_time, datetime):
+                journey_info['scheduled_exit_time'] = exit_time
+
+            # ** THE FIX IS HERE: Safely create DelayFactors object from dictionary **
+            delay_factors_data = info.get('delay_factors')
+            if isinstance(delay_factors_data, dict):
+                journey_info['delay_factors'] = DelayFactors(**delay_factors_data)
+            else:
+                journey_info['delay_factors'] = DelayFactors()
+
+            train_journeys.append(TrainJourney(
+                train_id=tid, 
+                network_state=network_state, 
+                non_functional_segments=non_functional_segments, 
+                **journey_info
+            ))
+        except (KeyError, ValueError) as e:
+            # If any train has malformed data, we can't proceed.
+            print(f"Error processing train {tid}: {e}")
+            raise ValueError(f"Malformed data for train {tid}")
+
     best_solution = simulated_annealing(train_journeys, network_state)
     _, final_delays, conflicts, final_timelines = calculate_objective_cost(best_solution, network_state)
     final_score = sum(final_delays.values())
+    
     recommendations = []
     for tid, data in best_solution.decisions.items():
         journey = best_solution.train_journeys[tid]
         action = data['action']
         if action == 'PROCEED' and journey.ideal_path and data['path'] != journey.ideal_path:
             action = 'REROUTED'
-        recommendations.append({
-            'train_id': tid, 'action': action, 'path': data['path'],
-            'total_delay_minutes': round(final_delays.get(tid, 0), 2)
-        })
-    # ** THE CHANGE IS HERE: Return the final_timelines **
+        recommendations.append({'train_id': tid, 'action': action, 'path': data['path'], 'total_delay_minutes': round(final_delays.get(tid, 0), 2)})
+        
     return {'score': round(final_score, 2), 'recommendations': recommendations, 'solution': best_solution, 'conflicts': conflicts, 'timelines': final_timelines}
-
 
