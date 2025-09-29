@@ -185,43 +185,33 @@ def execute_module(train_data, non_functional_segments=None):
     for tid, info in train_data.items():
         try:
             # --- Robust Data Sanitization ---
-            journey_info = {}
-            journey_info['train_type'] = info['type']
-            journey_info['entry_node'] = info['entry_node']
-            journey_info['exit_node'] = info['exit_node']
+            # 1. Convert time strings to datetime objects
+            entry_time_str = info['scheduled_entry_time']
+            entry_time_obj = datetime.fromisoformat(entry_time_str)
 
-            # Safely convert time strings to datetime objects
-            entry_time = info['scheduled_entry_time']
-            if isinstance(entry_time, str):
-                journey_info['scheduled_entry_time'] = datetime.fromisoformat(entry_time)
-            elif isinstance(entry_time, datetime):
-                journey_info['scheduled_entry_time'] = entry_time
-            else:
-                raise ValueError("scheduled_entry_time must be an ISO format string or datetime object")
+            exit_time_obj = None
+            if 'scheduled_exit_time' in info and info['scheduled_exit_time']:
+                exit_time_obj = datetime.fromisoformat(info['scheduled_exit_time'])
 
-            # Handle optional exit time
-            exit_time = info.get('scheduled_exit_time')
-            if isinstance(exit_time, str):
-                journey_info['scheduled_exit_time'] = datetime.fromisoformat(exit_time)
-            elif isinstance(exit_time, datetime):
-                journey_info['scheduled_exit_time'] = exit_time
-
-            # ** THE FIX IS HERE: Safely create DelayFactors object from dictionary **
+            # 2. Convert delay_factors dict to DelayFactors object
             delay_factors_data = info.get('delay_factors')
-            if isinstance(delay_factors_data, dict):
-                journey_info['delay_factors'] = DelayFactors(**delay_factors_data)
-            else:
-                journey_info['delay_factors'] = DelayFactors()
+            delay_factors_obj = DelayFactors(**delay_factors_data) if isinstance(delay_factors_data, dict) else DelayFactors()
 
+            # 3. Create the TrainJourney object with sanitized data
             train_journeys.append(TrainJourney(
-                train_id=tid, 
-                network_state=network_state, 
-                non_functional_segments=non_functional_segments, 
-                **journey_info
+                train_id=tid,
+                entry_node=info['entry_node'],
+                exit_node=info['exit_node'],
+                scheduled_entry_time=entry_time_obj,
+                scheduled_exit_time=exit_time_obj,
+                train_type=info['type'],
+                delay_factors=delay_factors_obj,
+                network_state=network_state,
+                non_functional_segments=non_functional_segments
             ))
-        except (KeyError, ValueError) as e:
+        except (KeyError, TypeError, ValueError) as e:
             # If any train has malformed data, we can't proceed.
-            print(f"Error processing train {tid}: {e}")
+            print(f"CRITICAL ERROR: Malformed data for train {tid}. Reason: {e}")
             raise ValueError(f"Malformed data for train {tid}")
 
     best_solution = simulated_annealing(train_journeys, network_state)
