@@ -21,7 +21,7 @@ TRAIN_PRECEDENCE = {
 # 1. CORE CLASSES
 # ==============================================================================
 class DelayFactors:
-    def __init__(self, is_track_functional=True, chain_pull_delay=0, loco_pilot_delay=0, ml_weather_delay=0):
+    def _init_(self, is_track_functional=True, chain_pull_delay=0, loco_pilot_delay=0, ml_weather_delay=0):
         self.chain_pull_delay = chain_pull_delay
         self.loco_pilot_delay = loco_pilot_delay
         self.ml_weather_delay = ml_weather_delay
@@ -29,7 +29,7 @@ class DelayFactors:
         return self.chain_pull_delay + self.loco_pilot_delay + self.ml_weather_delay
 
 class NetworkTimeState:
-    def __init__(self):
+    def _init_(self):
         self.edge_travel_times = {
             ('Entry_1', 'A'): 3, ('Entry_4', 'A'): 2, ('Entry_2', 'B'): 4, ('Entry_5', 'B'): 3,
             ('Entry_3', 'C'): 5, ('Entry_6', 'C'): 3, ('F', 'Entry_10'): 3, ('F', 'Entry_12'): 3,
@@ -42,7 +42,7 @@ class NetworkTimeState:
         self.dwell_times = {'Passenger': 3, 'Special': 2, 'Freight': 8, 'Local': 5}
 
 class TrainJourney:
-    def __init__(self, train_id, entry_node, exit_node, scheduled_entry_time,
+    def _init_(self, train_id, entry_node, exit_node, scheduled_entry_time,
                  train_type, network_state, scheduled_exit_time=None, non_functional_segments=None, delay_factors=None):
         self.train_id = train_id
         self.entry_node = entry_node
@@ -79,7 +79,7 @@ def find_all_possible_paths(graph, start_node, end_node):
 # 3. CORE OR ALGORITHM
 # ==============================================================================
 class PathBasedSolution:
-    def __init__(self, train_journeys):
+    def _init_(self, train_journeys):
         self.train_journeys = {tj.train_id: tj for tj in train_journeys}
         self.decisions = {}
         for tid, journey in self.train_journeys.items():
@@ -185,7 +185,6 @@ def execute_module(train_data, non_functional_segments=None):
     for tid, info in train_data.items():
         try:
             # --- Robust Data Sanitization ---
-            # 1. Convert time strings to datetime objects
             entry_time_str = info['scheduled_entry_time']
             entry_time_obj = datetime.fromisoformat(entry_time_str)
 
@@ -193,11 +192,9 @@ def execute_module(train_data, non_functional_segments=None):
             if 'scheduled_exit_time' in info and info['scheduled_exit_time']:
                 exit_time_obj = datetime.fromisoformat(info['scheduled_exit_time'])
 
-            # 2. Convert delay_factors dict to DelayFactors object
             delay_factors_data = info.get('delay_factors')
             delay_factors_obj = DelayFactors(**delay_factors_data) if isinstance(delay_factors_data, dict) else DelayFactors()
 
-            # 3. Create the TrainJourney object with sanitized data
             train_journeys.append(TrainJourney(
                 train_id=tid,
                 entry_node=info['entry_node'],
@@ -210,7 +207,6 @@ def execute_module(train_data, non_functional_segments=None):
                 non_functional_segments=non_functional_segments
             ))
         except (KeyError, TypeError, ValueError) as e:
-            # If any train has malformed data, we can't proceed.
             print(f"CRITICAL ERROR: Malformed data for train {tid}. Reason: {e}")
             raise ValueError(f"Malformed data for train {tid}")
 
@@ -218,13 +214,34 @@ def execute_module(train_data, non_functional_segments=None):
     _, final_delays, conflicts, final_timelines = calculate_objective_cost(best_solution, network_state)
     final_score = sum(final_delays.values())
     
+    # *** FIX: Convert tuple keys to strings for JSON serialization ***
+    json_safe_timelines = {}
+    for train_id, segments in final_timelines.items():
+        json_safe_timelines[train_id] = {}
+        for seg, (start, end) in segments.items():
+            # Convert tuple keys like ('Entry_1', 'A') to string keys like "Entry_1->A"
+            segment_key = f"{seg[0]}->{seg[1]}"
+            # Keep datetime objects as-is for now (dashboard_data_manager will handle them)
+            json_safe_timelines[train_id][segment_key] = (start, end)
+    # *** END FIX ***
+    
     recommendations = []
     for tid, data in best_solution.decisions.items():
         journey = best_solution.train_journeys[tid]
         action = data['action']
         if action == 'PROCEED' and journey.ideal_path and data['path'] != journey.ideal_path:
             action = 'REROUTED'
-        recommendations.append({'train_id': tid, 'action': action, 'path': data['path'], 'total_delay_minutes': round(final_delays.get(tid, 0), 2)})
+        recommendations.append({
+            'train_id': tid, 
+            'action': action, 
+            'path': data['path'], 
+            'total_delay_minutes': round(final_delays.get(tid, 0), 2)
+        })
         
-    return {'score': round(final_score, 2), 'recommendations': recommendations, 'solution': best_solution, 'conflicts': conflicts, 'timelines': final_timelines}
-
+    return {
+        'score': round(final_score, 2), 
+        'recommendations': recommendations, 
+        'solution': best_solution, 
+        'conflicts': conflicts, 
+        'timelines': json_safe_timelines  # Use the converted version
+    }
