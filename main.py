@@ -1,8 +1,10 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS  # <- Import CORS
 from or_module import execute_module
 from dashboard_data_manager import update_and_get_dashboard_state, get_dashboard_data_class
 
 app = Flask(__name__)
+CORS(app)  # <- Enable CORS for all routes and origins
 
 # ==============================================================================
 # 1. Main Optimizer Endpoint

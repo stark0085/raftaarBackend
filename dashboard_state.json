@@ -1,32 +1,16 @@
 {
   "kpis": {
-    "totalStationOperatingTimeMinutes": 14.5
+    "totalStationOperatingTimeMinutes": 0
   },
-  "currentDelays": [
-    {
-      "trainId": "T1_Pass",
-      "trainType": "Passenger",
-      "delay": 1.0,
-      "section": "Junction near A",
-      "eta": "20:11"
-    }
-  ],
+  "currentDelays": [],
   "trainQueue": [
     {
-      "trainId": "T1_Pass",
+      "trainId": "T001",
       "priority": "Passenger",
-      "status": "Approaching",
-      "platform": "Platform s",
-      "eta": "20:11",
+      "status": "Holding",
+      "platform": "Platform 1",
+      "eta": "01:00",
       "passengers": 850
-    },
-    {
-      "trainId": "T2_Frt",
-      "priority": "Freight",
-      "status": "Rerouted",
-      "platform": "Platform t",
-      "eta": "20:12",
-      "passengers": 0
     }
   ],
   "platformStatus": [
@@ -34,13 +18,13 @@
       "id": "Platform 1",
       "status": "available",
       "train": null,
-      "totalOccupancyMinutes": 8.0
+      "totalOccupancyMinutes": 0.0
     },
     {
       "id": "Platform 2",
       "status": "available",
       "train": null,
-      "totalOccupancyMinutes": 13.0
+      "totalOccupancyMinutes": 0.0
     },
     {
       "id": "Platform 3",
@@ -49,53 +33,26 @@
       "totalOccupancyMinutes": 0.0
     }
   ],
-  "predictedConflicts": [
-    {
-      "time": "20:14",
-      "trains": [
-        "T1_Pass",
-        "T2_Frt"
-      ],
-      "location": "Junction A",
-      "severity": "medium",
-      "resolution": "HOLD T1_Pass for 1.00 min"
-    }
-  ],
+  "predictedConflicts": [],
   "trainTypeData": [
     {
       "type": "Passenger",
-      "avgDelay": 1.0,
-      "count": 1
-    },
-    {
-      "type": "Freight",
       "avgDelay": 0.0,
-      "count": 1
+      "count": 0
     }
   ],
   "auditData": [
     {
-      "id": "AUD_F4C0D4",
-      "trainId": "T1_Pass",
-      "section": "Junction A",
-      "aiRecommendation": "PROCEED via path: Entry_1->A->P1_entry->P1_exit->F->Entry_12",
-      "outcome": "Success - Final Delay: 1.00 min",
-      "conflictType": "Priority Crossing",
-      "priority": "Passenger",
-      "weatherCondition": "Clear",
-      "linkedIncident": null
-    },
-    {
-      "id": "AUD_1E2C7E",
-      "trainId": "T2_Frt",
-      "section": "Junction A",
-      "aiRecommendation": "REROUTED via path: Entry_4->A->B->P2_entry->P2_exit->E->F->Entry_10",
+      "id": "AUD_D759C2",
+      "trainId": "T001",
+      "section": "Junction N/A",
+      "aiRecommendation": "HOLD via path: ",
       "outcome": "Success - Final Delay: 0.00 min",
       "conflictType": "Clear Path",
-      "priority": "Freight",
+      "priority": "Passenger",
       "weatherCondition": "Clear",
       "linkedIncident": null
     }
   ],
-  "last_updated": "2025-09-29 23:14:00.253420"
+  "last_updated": "2025-09-30 00:11:19.141973"
 }
