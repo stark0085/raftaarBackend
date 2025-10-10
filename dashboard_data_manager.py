@@ -1,44 +1,57 @@
 import json
 import os
+import redis
 from datetime import datetime, timedelta
 import uuid
+from dotenv import load_dotenv
 
-# The name of the local file that will act as our simple database
-STATE_FILE = 'dashboard_state.json'
+# --- New: Redis Configuration ---
+# Load environment variables from a .env file for local development
+load_dotenv()
+
+# Get the Redis connection URL from environment variables.
+# This works both locally (reads from .env) and on Vercel (reads from project settings).
+REDIS_URL = os.environ.get('REDIS_URL')
+
+# Raise an error if the URL isn't found, as the app can't function without it.
+if not REDIS_URL:
+    raise ValueError("FATAL ERROR: REDIS_URL environment variable is not set.")
+
+# Establish a connection to your Upstash Redis database.
+redis_client = redis.from_url(REDIS_URL)
+
+# Define the single key we will use to store the entire dashboard state in Redis.
+REDIS_DASHBOARD_KEY = "dashboard_live_state"
+
 
 def update_and_get_dashboard_state(optimization_results, initial_train_data):
     """
     Takes the full output of the OR module, transforms it into all the required
-    data classes for the dashboard, saves it to a local JSON file, and returns the live state.
+    data classes for the dashboard, saves it to REDIS, and returns the live state.
     """
+    # ==========================================================================
+    # All of your data processing logic below remains UNCHANGED.
+    # It correctly calculates the state. We only change how it's saved at the end.
+    # ==========================================================================
+    
     recommendations = optimization_results.get('recommendations', [])
     conflicts = optimization_results.get('conflicts', [])
     timelines_raw = optimization_results.get('timelines', {})
     now = datetime.now()
 
-    # ==========================================================================
-    # ** CONVERT TIMELINES: Handle both string keys and datetime values **
-    # ==========================================================================
+    # ** CONVERT TIMELINES **
     timelines = {}
     for train_id, segments in timelines_raw.items():
         timelines[train_id] = {}
         for segment_key, (start_val, end_val) in segments.items():
-            # segment_key is now a string like "Entry_1->A"
-            # Values might be datetime objects OR strings, handle both
             if isinstance(start_val, str):
                 start_dt = datetime.fromisoformat(start_val)
                 end_dt = datetime.fromisoformat(end_val)
             else:
-                # Already datetime objects
-                start_dt = start_val
-                end_dt = end_val
-            
+                start_dt, end_dt = start_val, end_val
             timelines[train_id][segment_key] = (start_dt, end_dt)
-    # ==========================================================================
 
-    # ==========================================================================
-    # ** Sanitize the input data: Convert time strings to datetime objects **
-    # ==========================================================================
+    # ** Sanitize the input data **
     sanitized_initial_data = {}
     for tid, info in initial_train_data.items():
         sanitized_info = info.copy()
@@ -47,7 +60,6 @@ def update_and_get_dashboard_state(optimization_results, initial_train_data):
         if isinstance(info.get('scheduled_exit_time'), str):
             sanitized_info['scheduled_exit_time'] = datetime.fromisoformat(info['scheduled_exit_time'])
         sanitized_initial_data[tid] = sanitized_info
-    # ==========================================================================
 
     # --- Data Class 1: currentDelays ---
     current_delays = []
@@ -80,12 +92,11 @@ def update_and_get_dashboard_state(optimization_results, initial_train_data):
                 'eta': eta_time.strftime('%H:%M'),
                 'passengers': 850 if 'Pass' in initial_info.get('type', '') else 0
             })
-
+    
     # --- Data Class 3 & KPI: platformStatus and Occupancy Calculation ---
     platform_events = {1: [], 2: [], 3: []}
     for train_id, timeline in timelines.items():
         for segment_key, (start, end) in timeline.items():
-            # Handle string keys like "P1_entry->P1_exit"
             if 'P1_entry' in segment_key and 'P1_exit' in segment_key:
                 platform_events[1].append({'start': start, 'end': end, 'train': train_id})
             elif 'P2_entry' in segment_key and 'P2_exit' in segment_key:
@@ -152,7 +163,7 @@ def update_and_get_dashboard_state(optimization_results, initial_train_data):
             'linkedIncident': None
         })
 
-    # --- Assemble and save the final state ---
+    # --- Assemble the final state ---
     live_state = {
         'kpis': {'totalStationOperatingTimeMinutes': total_station_operating_time},
         'currentDelays': current_delays,
@@ -164,18 +175,48 @@ def update_and_get_dashboard_state(optimization_results, initial_train_data):
         'last_updated': datetime.now()
     }
     
-    with open(STATE_FILE, 'w') as f:
-        json.dump(live_state, f, indent=2, default=str)
+    # --- Changed: Save to Redis instead of a local file ---
+    try:
+        # Convert the dictionary to a JSON string. `default=str` is crucial
+        # to handle datetime objects that are not natively JSON serializable.
+        state_as_json_string = json.dumps(live_state, indent=2, default=str)
+        
+        # Store the JSON string in Redis under our predefined key.
+        redis_client.set(REDIS_DASHBOARD_KEY, state_as_json_string)
+        
+        print(f"Live dashboard state has been updated in Redis.")
+
+    except Exception as e:
+        print(f"ERROR: Could not save state to Redis. Reason: {e}")
+        # Optionally, re-raise the exception if this is a critical failure
+        # raise e
     
-    print(f"Live dashboard state has been updated in '{STATE_FILE}'.")
     return live_state
 
+
 def get_dashboard_data_class(class_name):
-    if not os.path.exists(STATE_FILE): 
-        return []
+    """
+    Fetches the entire dashboard state from Redis, then returns the specific
+    data class (e.g., 'platformStatus') that was requested.
+    """
     try:
-        with open(STATE_FILE, 'r') as f: 
-            data = json.load(f)
+        # --- Changed: Read from Redis instead of a local file ---
+        # Retrieve the JSON string from our key in Redis
+        state_as_json_string = redis_client.get(REDIS_DASHBOARD_KEY)
+
+        # If the key doesn't exist in Redis yet, it means the /optimize
+        # endpoint hasn't been called. Return an empty list as a safe default.
+        if state_as_json_string is None:
+            return []
+        
+        # If data was found, parse the JSON string back into a Python dictionary
+        data = json.loads(state_as_json_string)
+        
+        # Return the specific list/value for the requested class_name.
+        # .get() is used to safely return an empty list if the key isn't in the data.
         return data.get(class_name, [])
-    except (json.JSONDecodeError, FileNotFoundError): 
+
+    except Exception as e:
+        print(f"ERROR: Could not retrieve or parse state from Redis. Reason: {e}")
+        # Return an empty list to prevent the frontend from crashing on an error.
         return []
