@@ -1,108 +1,248 @@
-SIH Train Delay Minimization - OR Module
+# MasterApi - Raftaar Dashboard Backend
 
-This project contains the core Operations Research (OR) module for the Smart India Hackathon train delay minimization problem. It uses a Simulated Annealing metaheuristic to find near-optimal schedules for trains in a complex railway network, aiming to maximize throughput while minimizing total delay. The logic is exposed via a simple Flask API for easy integration with other services, such as a live dashboard.
+This backend powers the railway dashboard used to optimize train movements, surface audit logs, show platform status, predict conflicts, and expose queue and analytics data for visualization.
 
-Features
+---
 
-Dynamic Pathfinding: Automatically finds all possible routes for a train, including rerouting links, and can adapt to track failures.
+## Project Scope
 
-Sophisticated Conflict Detection: A detailed event-based simulation detects both track and junction (node) conflicts.
+- **Optimization API** to generate HOLD/PROCEED with paths and per-edge timelines
+- **Dashboard GET endpoints** for platform status, train queue, current delays, predicted conflicts, audit logs, and train-type aggregates
+- Hosted service available at the URL shown in the screenshots; all examples below mirror the payloads visible there
 
-Intelligent Rerouting: The optimizer can reroute trains to different platforms or paths to avoid congestion or non-functional tracks, finding globally optimal solutions.
+---
 
-Priority Handling: Correctly respects train precedence (e.g., Special > Passenger > Freight), ensuring high-priority trains are given the right-of-way.
+## Authentication
 
-Handles External Delays: Can factor in initial delays predicted by an ML model (e.g., weather delays) to produce a more realistic schedule.
+The sample `auth/check` API format in the screenshots demonstrates typical success/error shapes used across services where applicable.
 
-API-Ready: All logic is wrapped in a Flask API, providing a clean interface for a UI dashboard or other services.
+---
 
-Live Dashboard Backend: Provides a suite of API endpoints to power a real-time dashboard with KPIs, train queues, platform status, and more.
+## API: Optimize Timetable
 
+**Method:** `POST`
 
-Setup and Installation
+**Endpoint:** `/optimize` (host root from screenshots)
 
-These instructions will get you a copy of the project up and running on your local machine for development and testing purposes.
+### Request Body:
 
-Prerequisites
-
-Python 3.8+
-
-pip and virtualenv
-
-
-Instructions
-
-Clone the repository:
-git clone https://github.com/krishjaiman
-cd or-module
-
-
-Create and activate a virtual environment:
-This isolates the project's dependencies.# On macOS/Linux
-python3 -m venv venv
-
-source venv/bin/activate
-
-# On Windows
-
-python -m venv venv
-
-.\venv\Scripts\activate
-
-
-Install the required dependencies:
-
-pip install -r requirements.txt
-
-
-Run the Server:
-
-Start the Flask API server with this command:
-
-python main.py
-If it starts successfully, you will see a message indicating it's running on http://127.0.0.1:5000/.
-
-API Usage GuideThe backend exposes a simple API for running the optimization and fetching dashboard data.
-Triggering the Optimization (POST)To run the optimizer, the UI must send the current state of all trains. This triggers the simulation and updates the live dashboard data stored in dashboard_state.json.URL: http://127.0.0.1:5000/optimize
-
- Method: POST
- 
- Body (JSON Example):Note: Timestamps must be in ISO 8601 format.
-
- {
-    "trains": {
-   
-        "T1_Pass": {
-            "type": "Passenger",
-            "entry_node": "Entry_1",
-            "exit_node": "Entry_12",
-            "scheduled_entry_time": "2025-09-29T18:05:00",
-            "scheduled_exit_time": "2025-09-29T18:30:00"
-        },
-   
-        "T2_Frt": {
-            "type": "Freight",
-            "entry_node": "Entry_4",
-            "exit_node": "Entry_10",
-            "scheduled_entry_time": "2025-09-29T18:06:00",
-            "scheduled_exit_time": "2025-09-29T18:40:00"
-        }
+```json
+{
+  "name": "Proceed vs. Reroute Congestion",
+  "trains": {
+    "T1_Pass": {
+      "type": "Passenger",
+      "entry_node": "Entry_1",
+      "exit_node": "Entry_12",
+      "scheduled_entry_time": "2025-10-29T20:01:10",
+      "scheduled_exit_time": "2025-10-29T20:01:40",
+      "delay_factors": null
     },
-   
-    "non_functional_segments": [["A", "P1_entry"]]
+    "T2_Local": {
+      "type": "Local",
+      "entry_node": "Entry_1",
+      "exit_node": "Entry_9",
+      "scheduled_entry_time": "2025-10-29T20:01:12",
+      "scheduled_exit_time": "2025-10-29T20:01:45",
+      "delay_factors": null
+    }
+  },
+  "non_functional_segments": []
 }
-7. Fetching Dashboard Data (GET):
+```
 
-After the **/optimize** call is complete, the UI can fetch the updated data for each of its components using the following GET endpoints.
+### Success Response:
 
-Endpoint                              Data Returned
+```json
+{
+  "conflicts": [],
+  "recommendations": [
+    {
+      "train_id": "T1_Pass",
+      "action": "HOLD",
+      "path": null,
+      "total_delay_minutes": 0
+    },
+    {
+      "train_id": "T2_Local",
+      "action": "PROCEED",
+      "path": [
+        "Entry_1",
+        "A",
+        "P1_entry",
+        "P1_exit",
+        "F",
+        "E",
+        "Entry_9"
+      ],
+      "total_delay_minutes": 0.0
+    }
+  ],
+  "score": 0.0,
+  "timelines": {
+    "T1_Pass": {},
+    "T2_Local": {
+      "A->P1_entry": [
+        "Wed, 29 Oct 2025 20:04:12 GMT",
+        "Wed, 29 Oct 2025 20:06:12 GMT"
+      ],
+      "E->Entry_9": [
+        "Wed, 29 Oct 2025 20:19:42 GMT",
+        "Wed, 29 Oct 2025 20:23:42 GMT"
+      ]
+    }
+  }
+}
+```
 
-/dashboard/current_delays     An array of all trains that currently have a delay./dashboard/train_queueAn array of all trains in the system, with their current status.
+---
 
-/dashboard/platform_status        An array showing the live status of each platform./dashboard/predicted_conflictsAn array of all conflicts the optimizer detected and resolved.
+## API: Platform Status
 
-/dashboard/train_type_data         An array of summary statistics for each train type./dashboard/audit_dataAn array of detailed log entries for each decision.
+**Method:** `GET`
 
-Example: To populate the "Train Queue" component, the UI would make a GET request to http://127.0.0.1:5000/dashboard/train_queue.
+**Endpoint:** `/dashboard/platform_status`
 
-3. Making the Dashboard "Live"To keep the dashboard updated, the UI application should have a timer (e.g., using setInterval in JavaScript) that repeats the POST and GET workflow every 10-30 seconds. This polling mechanism ensures that the dashboard is always showing a fresh, optimized state.
+### Response:
+
+```json
+[
+  {
+    "id": "Platform 1",
+    "status": "available",
+    "totalOccupancyMinutes": 0.0,
+    "train": null
+  },
+  {
+    "id": "Platform 2",
+    "status": "available",
+    "totalOccupancyMinutes": 0.0,
+    "train": null
+  },
+  {
+    "id": "Platform 3",
+    "status": "available",
+    "totalOccupancyMinutes": 0.0,
+    "train": null
+  }
+]
+```
+
+---
+
+## API: Train Queue
+
+**Method:** `GET`
+
+**Endpoint:** `/dashboard/train_queue`
+
+### Response:
+
+```json
+[
+  {
+    "trainId": "T001",
+    "priority": "Passenger",
+    "platform": "Platform 1",
+    "passengers": 850,
+    "eta": "01:00",
+    "status": "Holding"
+  }
+]
+```
+
+---
+
+## API: Audit Data
+
+**Method:** `GET`
+
+**Endpoint:** `/dashboard/audit_data`
+
+### Response (optimize-derived entries):
+
+```json
+[
+  {
+    "id": "AUD_892Q6F",
+    "trainId": "T1_Pass",
+    "priority": "Passenger",
+    "section": "Junction N/A",
+    "conflictType": "Clear Path",
+    "aiRecommendation": "HOLD via path: ",
+    "outcome": "Success - Final Delay: 0.00 min",
+    "weatherCondition": "Clear",
+    "linkedIncident": null
+  },
+  {
+    "id": "AUD_2A6G37",
+    "trainId": "T2_Local",
+    "priority": "Local",
+    "section": "Junction A",
+    "conflictType": "Clear Path",
+    "aiRecommendation": "PROCEED via path: Entry 1->A->P1_entry->P1_exit->F->E->Entry 9",
+    "outcome": "Success - Final Delay: 0.00 min",
+    "weatherCondition": "Clear",
+    "linkedIncident": null
+  }
+]
+```
+
+### Response (single HOLD example):
+
+```json
+[
+  {
+    "id": "AUD_D759C2",
+    "trainId": "T001",
+    "priority": "Passenger",
+    "section": "Junction N/A",
+    "conflictType": "Clear Path",
+    "aiRecommendation": "HOLD via path: ",
+    "outcome": "Success - Final Delay: 0.00 min",
+    "weatherCondition": "Clear",
+    "linkedIncident": null
+  }
+]
+```
+
+---
+
+## API: Predicted Conflicts
+
+**Method:** `GET`
+
+**Endpoint:** `/dashboard/predicted_conflicts`
+
+---
+
+## API: Current Delays
+
+**Method:** `GET`
+
+**Endpoint:** `/dashboard/current_delays`
+
+---
+
+## API: Train Type Data
+
+**Method:** `GET`
+
+**Endpoint:** `/dashboard/train_type_data`
+
+### Response:
+
+```json
+[
+  {
+    "type": "Passenger",
+    "count": 0,
+    "avgDelay": 0.0
+  },
+  {
+    "type": "Local",
+    "count": 1,
+    "avgDelay": 0.0
+  }
+]
+```
